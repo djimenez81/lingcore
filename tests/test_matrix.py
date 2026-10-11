@@ -112,5 +112,67 @@ class TestFeatureMatrix:
                 values={"voice": Value("close")},
             )
         )
-        with pytest.raises(ValueError, match="non-binary"):
+        with pytest.raises(ValueError, match="No encoding"):
             feature_matrix(inv, _binary_system())
+
+
+class TestEncoderIntegration:
+    def test_custom_encoder(self) -> None:
+        from lingcore import Value
+        from lingcore.encoding import ValueEncoder
+
+        system = FeatureSystem(
+            name="toy",
+            version="0.1.0",
+            features=(Feature("voice"),),
+            encoder=ValueEncoder(
+                {
+                    Value("+"): 100.0,
+                    Value("-"): -100.0,
+                    None: float("nan"),
+                }
+            ),
+        )
+        inv = SegmentInventory(
+            id="toy",
+            types=("consonant",),
+            classifiers={"consonant": ()},
+        )
+        inv.add(
+            Segment(
+                symbol="p",
+                type="consonant",
+                values={"voice": Value("-")},
+            )
+        )
+        m = feature_matrix(inv, system)
+        assert m.data[0, 0] == -100.0
+
+    def test_default_encoder_used_when_omitted(self) -> None:
+        system = FeatureSystem(
+            name="toy",
+            version="0.1.0",
+            features=(Feature("voice"),),
+        )
+        assert system.encoder is not None
+
+    def test_encoder_unknown_value_raises(self) -> None:
+        system = FeatureSystem(
+            name="toy",
+            version="0.1.0",
+            features=(Feature("voice"),),
+        )
+        inv = SegmentInventory(
+            id="toy",
+            types=("consonant",),
+            classifiers={"consonant": ()},
+        )
+        inv.add(
+            Segment(
+                symbol="p",
+                type="consonant",
+                values={"voice": Value("close")},
+            )
+        )
+        with pytest.raises(ValueError, match="No encoding"):
+            feature_matrix(inv, system)

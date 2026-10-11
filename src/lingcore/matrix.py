@@ -22,34 +22,6 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = ["FeatureMatrix", "feature_matrix"]
 
 
-def _value_to_float(value: object) -> float:
-    """Encode a lingcore ``Value`` for numeric storage.
-
-    A ``Value`` whose ``name`` is exactly ``"+"`` is encoded as 1.0,
-    ``"-"`` as 0.0, and ``"0"`` as NaN. Anything else raises, because
-    a non-binary ``Value`` cannot be stored in a binary feature
-    matrix.
-    """
-    from .values import Value
-
-    if value is None:
-        return float("nan")
-    if isinstance(value, Value):
-        if value.name == "+":
-            return 1.0
-        if value.name == "-":
-            return 0.0
-        if value.name == "0":
-            return float("nan")
-        raise ValueError(
-            f"Cannot encode non-binary Value {value.name!r} in a "
-            f"FeatureMatrix"
-        )
-    raise TypeError(
-        f"Expected Value or None, got {type(value).__name__}"
-    )
-
-
 @dataclass(frozen=True)
 class FeatureMatrix:
     """A read-only segments-by-features table.
@@ -185,14 +157,16 @@ def feature_matrix(
     """Materialize the feature matrix of ``inventory`` under ``system``.
 
     Segments that lack a ``values`` entry for a given feature are
-    encoded as NaN in that column.
+    encoded using the system's encoder, which is expected to map
+    ``None`` to a suitable "undefined" marker (by default, NaN).
 
     Parameters
     ----------
     inventory : SegmentInventory
         The inventory whose segments form the rows.
     system : FeatureSystem
-        The feature system whose features form the columns.
+        The feature system whose features form the columns, and whose
+        encoder determines the numeric encoding of each cell.
 
     Returns
     -------
@@ -201,17 +175,20 @@ def feature_matrix(
 
     Notes
     -----
-    Only binary features are supported in v0.1. Values are encoded as
-    ``"+"`` -> 1.0, ``"-"`` -> 0.0, ``"0"`` -> NaN. Any other value
-    raises :class:`ValueError`.
+    The encoding is determined by ``system.encoder``. The default
+    encoder maps ``Value("+")`` to 1.0, ``Value("-")`` to 0.0,
+    ``Value("0")`` to NaN, and missing values to NaN. Any value not
+    present in the encoder's mapping raises :class:`ValueError`.
     """
+    encoder = system.encoder
+    assert encoder is not None  # guaranteed by FeatureSystem
     rows = len(inventory.segments)
     cols = len(system.features)
     data = np.full((rows, cols), np.nan, dtype=float)
     for i, segment in enumerate(inventory.segments):
         for k, feature in enumerate(system.features):
             value = segment.values.get(feature.name)
-            data[i, k] = _value_to_float(value)
+            data[i, k] = encoder.encode(value)
     return FeatureMatrix(
         segment_ids=inventory.symbols(),
         feature_names=system.names(),

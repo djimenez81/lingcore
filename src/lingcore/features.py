@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from ._immutable import freeze_mapping, freeze_tuple
+from .encoding import ValueEncoder
 
 __all__ = ["Feature", "FeatureKind", "FeatureSystem"]
 
@@ -75,13 +76,22 @@ class FeatureSystem:
         Version string, e.g. ``"0.1.0"``.
     features : tuple of Feature
         The features, in canonical order.
+    encoder : ValueEncoder or None, optional
+        The encoding used when materializing this system as a
+        :class:`~lingcore.matrix.FeatureMatrix`. When ``None``
+        (the default), :meth:`ValueEncoder.default` is used.
     metadata : Mapping, optional
         Free-form metadata. lingcore never interprets it.
+
+    Notes
+    -----
+    Instances are immutable and hashable.
     """
 
     name: str
     version: str
     features: tuple[Feature, ...]
+    encoder: ValueEncoder | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -91,12 +101,23 @@ class FeatureSystem:
         object.__setattr__(
             self, "metadata", freeze_mapping(self.metadata)
         )
+        if self.encoder is None:
+            object.__setattr__(
+                self, "encoder", ValueEncoder.default()
+            )
         names = [f.name for f in self.features]
         if len(names) != len(set(names)):
             raise ValueError(
                 f"Duplicate feature names in system {self.name!r}: "
                 f"{sorted({n for n in names if names.count(n) > 1})}"
             )
+
+    def __hash__(self) -> int:
+        # Hash only the identity-relevant fields. ``encoder`` and
+        # ``metadata`` are attachments; two systems that agree on
+        # name, version, and features are considered the same
+        # system for hashing purposes.
+        return hash((self.name, self.version, self.features))
 
     def __len__(self) -> int:
         return len(self.features)

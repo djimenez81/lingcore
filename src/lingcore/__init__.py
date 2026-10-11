@@ -21,6 +21,9 @@ Inventories:
 
 Matrices:
     :class:`FeatureMatrix`, :func:`feature_matrix`
+
+Submodules of note:
+    :mod:`lingcore.encoding` provides :class:`ValueEncoder`.
 """
 
 from .features import Feature, FeatureKind, FeatureSystem
