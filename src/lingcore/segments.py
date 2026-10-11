@@ -35,7 +35,13 @@ class Segment:
     values : Mapping of str to Value, optional
         Feature-like values keyed by feature name. Defaults to empty.
     metadata : Mapping, optional
-        Free-form metadata. lingcore never interprets it.
+        Free-form metadata. lingcore never interprets it. Use this only
+        for annotations that are specific to your application and not
+        structural to the linguistic model — for example, source
+        citations, external annotation IDs, or free-form notes.
+        Do not use it as a substitute for a typed field: if a property
+        is common enough that a second reader would expect to find it
+        by name, propose adding it as a first-class field instead.
 
     Notes
     -----
