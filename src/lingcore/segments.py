@@ -18,7 +18,7 @@ from .values import Value
 __all__ = ["Segment"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Segment:
     """An atomic unit of linguistic structure.
 
@@ -35,17 +35,21 @@ class Segment:
     values : Mapping of str to Value, optional
         Feature-like values keyed by feature name. Defaults to empty.
     metadata : Mapping, optional
-        Free-form metadata. lingcore never interprets it. Use this only
-        for annotations that are specific to your application and not
-        structural to the linguistic model — for example, source
-        citations, external annotation IDs, or free-form notes.
-        Do not use it as a substitute for a typed field: if a property
-        is common enough that a second reader would expect to find it
-        by name, propose adding it as a first-class field instead.
+        Free-form metadata. lingcore never interprets it. Excluded
+        from equality and hashing.
 
     Notes
     -----
-    Instances are immutable and hashable. Equality is by all fields.
+    Instances are immutable. Two segments are equal iff their
+    ``symbol``, ``type``, ``classification``, and ``values`` are
+    equal; ``metadata`` is an attachment and does not participate in
+    identity. Hashing follows the same rule.
+
+    The ``metadata`` mapping is exposed as a read-only view, but its
+    *values* are not frozen: a metadata value that is itself mutable
+    (a list, a dict) can be mutated through the view. This is a
+    documented limitation, and it is why metadata is excluded from
+    hashing.
     """
 
     symbol: str
@@ -65,6 +69,21 @@ class Segment:
             self, "metadata", freeze_mapping(self.metadata)
         )
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Segment):
+            return NotImplemented
+        return (
+            self.symbol,
+            self.type,
+            self.classification,
+            self.values,
+        ) == (
+            other.symbol,
+            other.type,
+            other.classification,
+            other.values,
+        )
+
     def __hash__(self) -> int:
         return hash(
             (
@@ -72,7 +91,6 @@ class Segment:
                 self.type,
                 tuple(sorted(self.classification.items())),
                 tuple(sorted(self.values.items())),
-                tuple(sorted(self.metadata.items())),
             )
         )
 
