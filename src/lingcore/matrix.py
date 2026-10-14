@@ -7,13 +7,12 @@ values are represented by ``numpy.nan``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .features import FeatureSystem
+from .features import FeatureKind, FeatureSystem
 from .inventories import SegmentInventory
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -22,7 +21,7 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = ["FeatureMatrix", "feature_matrix"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class FeatureMatrix:
     """A read-only segments-by-features table.
 
@@ -39,7 +38,11 @@ class FeatureMatrix:
 
     Notes
     -----
-    Constructed via :func:`feature_matrix`, not directly.
+    Constructed via :func:`feature_matrix`, not directly. Instances
+    are immutable; the underlying array is copied at construction and
+    marked read-only. Equality compares segment IDs, feature names,
+    and cell values, treating two NaNs as equal. Hashing follows the
+    same rule and is over the flattened cell values.
     """
 
     segment_ids: tuple[str, ...]
@@ -53,7 +56,30 @@ class FeatureMatrix:
                 f"data shape {self.data.shape} does not match "
                 f"{expected}"
             )
-        self.data.flags.writeable = False
+        if not np.issubdtype(self.data.dtype, np.floating):
+            raise ValueError(
+                f"data must be a float array; got {self.data.dtype}"
+            )
+        arr = np.array(self.data, dtype=float, copy=True)
+        arr.flags.writeable = False
+        object.__setattr__(self, "data", arr)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, FeatureMatrix):
+            return NotImplemented
+        return (
+            self.segment_ids == other.segment_ids
+            and self.feature_names == other.feature_names
+            and np.array_equal(
+                self.data, other.data, equal_nan=True
+            )
+        )
+
+    def __hash__(self) -> int:
+        flat = tuple(self.data.flatten().tolist())
+        return hash(
+            (self.segment_ids, self.feature_names, flat)
+        )
 
     def distinguishing_features(
         self, i: int, j: int
@@ -114,14 +140,26 @@ class FeatureMatrix:
         return covers
 
     def to_records(self) -> list[dict[str, object]]:
-        """Return one dict per segment, keyed by feature name."""
+        """Return one dict per segment, keyed by feature name.
+
+        Cells are returned as floats, or ``None`` when undefined.
+        The raw encoded values are preserved, so custom encoders
+        (for example, one that maps ``"+"`` to ``100.0``) round-trip
+        correctly.
+
+        Returns
+        -------
+        list of dict
+            One dict per segment, with a ``"symbol"`` key and one key
+            per feature name.
+        """
         records: list[dict[str, object]] = []
         for i, symbol in enumerate(self.segment_ids):
             record: dict[str, object] = {"symbol": symbol}
             for k, name in enumerate(self.feature_names):
                 value = self.data[i, k]
                 record[name] = (
-                    None if np.isnan(value) else bool(value)
+                    None if np.isnan(value) else float(value)
                 )
             records.append(record)
         return records
@@ -173,6 +211,12 @@ def feature_matrix(
     FeatureMatrix
         A read-only segments-by-features table.
 
+    Raises
+    ------
+    NotImplementedError
+        If ``system`` contains a feature whose kind is not
+        ``FeatureKind.BINARY``.
+
     Notes
     -----
     The encoding is determined by ``system.encoder``. The default
@@ -180,8 +224,18 @@ def feature_matrix(
     ``Value("0")`` to NaN, and missing values to NaN. Any value not
     present in the encoder's mapping raises :class:`ValueError`.
     """
+    for feature in system.features:
+        if feature.kind is not FeatureKind.BINARY:
+            raise NotImplementedError(
+                f"Feature {feature.name!r} has kind "
+                f"{feature.kind.value!r}; only BINARY features "
+                f"are supported by feature_matrix"
+            )
     encoder = system.encoder
-    assert encoder is not None  # guaranteed by FeatureSystem
+    if encoder is None:  # pragma: no cover
+        raise RuntimeError(
+            f"FeatureSystem {system.name!r} has no encoder"
+        )
     rows = len(inventory.segments)
     cols = len(system.features)
     data = np.full((rows, cols), np.nan, dtype=float)
