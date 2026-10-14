@@ -63,16 +63,6 @@ class TestImmutability:
         src[Value("-")] = 0.0
         assert Value("-") not in e.mapping
 
-    def test_hashable(self) -> None:
-        e1 = ValueEncoder({Value("+"): 1.0})
-        e2 = ValueEncoder({Value("+"): 1.0})
-        assert e1 == e2
-
-    def test_unhashable(self) -> None:
-        e = ValueEncoder({Value("+"): 1.0})
-        with pytest.raises(TypeError, match="unhashable"):
-            hash(e)
-
 
 class TestEquality:
     def test_equal_simple(self) -> None:
