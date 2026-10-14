@@ -26,6 +26,12 @@ def freeze_mapping(items: Mapping[_K, _V]) -> Mapping[_K, _V]:
     recursively frozen; callers that need nested immutability should
     freeze inner mappings themselves before calling this function.
 
+    The returned object is a ``MappingProxyType`` over a ``dict``.
+    It is read-only, but it is *not* hashable: ``MappingProxyType``
+    delegates hashing to the wrapped ``dict``, and ``dict`` is
+    unhashable. Callers that need a stable hash should derive one
+    from the mapping's items.
+
     Parameters
     ----------
     items : Mapping
@@ -34,16 +40,18 @@ def freeze_mapping(items: Mapping[_K, _V]) -> Mapping[_K, _V]:
     Returns
     -------
     Mapping
-        A read-only, hashable-if-contents-are-hashable view.
+        A read-only view of a shallow copy of ``items``.
     """
     return MappingProxyType(dict(items))
 
 
 def freeze_tuple(items: Iterable[_T]) -> tuple[_T, ...]:
-    """Return a tuple of ``items``.
+    """Return a tuple built from ``items``.
 
-    Trivial when ``items`` is already a tuple; provided for symmetry
-    with :func:`freeze_mapping` so dataclasses read uniformly.
+    Strings and bytes are wrapped as single-element tuples, since
+    iterating them would otherwise produce a tuple of characters or
+    integers. This matches the common intent of writing
+    ``aliases="voi"`` as shorthand for ``aliases=("voi",)``.
 
     Parameters
     ----------
@@ -53,6 +61,9 @@ def freeze_tuple(items: Iterable[_T]) -> tuple[_T, ...]:
     Returns
     -------
     tuple
-        A tuple with the same elements.
+        A tuple whose elements are those of ``items``, or a
+        single-element tuple if ``items`` is a string or bytes.
     """
+    if isinstance(items, (str, bytes)):
+        return (items,)  # type: ignore[return-value]
     return tuple(items)
