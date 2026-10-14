@@ -32,10 +32,20 @@ class TestFeature:
         f = Feature("voice")
         assert {f, f} == {f}
 
-    def test_equality(self) -> None:
+    def test_equality_by_name_and_kind(self) -> None:
         assert Feature("voice") == Feature("voice")
         assert Feature("voice") != Feature("nasal")
-        assert Feature("voice") != Feature("voice", aliases=("voi",))
+        assert Feature("voice") != Feature(
+            "voice", kind=FeatureKind.MULTI
+        )
+
+    def test_equality_ignores_description_and_aliases(self) -> None:
+        assert Feature("voice") == Feature(
+            "voice", description="vocal fold vibration"
+        )
+        assert Feature("voice") == Feature(
+            "voice", aliases=("voi",)
+        )
 
     def test_matches(self) -> None:
         f = Feature("voice", aliases=("voi", "voiced"))
@@ -65,7 +75,7 @@ class TestFeatureSystem:
         assert isinstance(s.features, tuple)
 
     def test_duplicate_feature_names_raise(self) -> None:
-        with pytest.raises(ValueError, match="Duplicate feature"):
+        with pytest.raises(ValueError, match="Identifier"):
             FeatureSystem(
                 name="toy",
                 version="0.1.0",
@@ -141,20 +151,30 @@ class TestFeatureSystem:
 
     def test_resolve_missing(self) -> None:
         s = self._system()
-        with pytest.raises(KeyError, match="matches 0"):
+        with pytest.raises(KeyError, match="No feature"):
             s.resolve("height")
 
-    def test_resolve_ambiguous(self) -> None:
-        s = FeatureSystem(
-            name="toy",
-            version="0.1.0",
-            features=(
-                Feature("voice"),
-                Feature("nasal", aliases=("voice",)),
-            ),
-        )
-        with pytest.raises(KeyError, match="matches 2"):
-            s.resolve("voice")
+    def test_alias_collision_with_canonical_name_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Identifier"):
+            FeatureSystem(
+                name="toy",
+                version="0.1.0",
+                features=(
+                    Feature("voice"),
+                    Feature("nasal", aliases=("voice",)),
+                ),
+            )
+
+    def test_alias_collision_between_features_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Identifier"):
+            FeatureSystem(
+                name="toy",
+                version="0.1.0",
+                features=(
+                    Feature("voice", aliases=("v",)),
+                    Feature("nasal", aliases=("v",)),
+                ),
+            )
 
     def test_hashable(self) -> None:
         s1 = self._system()
