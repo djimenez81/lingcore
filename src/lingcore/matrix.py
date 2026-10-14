@@ -228,7 +228,7 @@ def feature_matrix(
         if feature.kind is not FeatureKind.BINARY:
             raise NotImplementedError(
                 f"Feature {feature.name!r} has kind "
-                f"{feature.kind.value!r}; only BINARY features "
+                f"{feature.kind.name}; only BINARY features "
                 f"are supported by feature_matrix"
             )
     encoder = system.encoder
