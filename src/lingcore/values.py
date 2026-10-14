@@ -16,7 +16,7 @@ from ._immutable import freeze_tuple
 __all__ = ["Value", "ValueSet"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Value:
     """A named label attached to a segment.
 
@@ -32,9 +32,11 @@ class Value:
 
     Notes
     -----
-    Instances are immutable and hashable. Two ``Value`` instances are
-    equal iff their ``name``, ``description``, and ``aliases`` are all
-    equal.
+    Instances are immutable. Two ``Value`` instances are equal iff
+    their ``name`` is the same; ``description`` and ``aliases`` are
+    annotations and do not participate in identity. Hashing is over
+    ``name`` alone. A string passed as ``aliases`` is wrapped as a
+    single-element tuple.
     """
 
     name: str
@@ -45,6 +47,14 @@ class Value:
         object.__setattr__(
             self, "aliases", freeze_tuple(self.aliases)
         )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Value):
+            return NotImplemented
+        return self.name == other.name
+
+    def __hash__(self) -> int:
+        return hash(self.name)
 
     def matches(self, candidate: str) -> bool:
         """Return True if ``candidate`` names this value.
@@ -70,8 +80,8 @@ class ValueSet:
     """A named, ordered collection of :class:`Value` objects.
 
     Used to declare the admissible values for a classifier (for
-    example, the set of heights for vowels) so inventories can validate
-    their contents.
+    example, the set of heights for vowels) so inventories can
+    validate their contents.
 
     Parameters
     ----------
@@ -81,6 +91,11 @@ class ValueSet:
         Members of the set, in a canonical order.
     description : str, optional
         Human-readable explanation. Defaults to ``""``.
+
+    Notes
+    -----
+    Instances are immutable and hashable. Duplicate values (by name)
+    are rejected at construction.
     """
 
     name: str
@@ -91,6 +106,12 @@ class ValueSet:
         object.__setattr__(
             self, "values", freeze_tuple(self.values)
         )
+        names = [v.name for v in self.values]
+        if len(names) != len(set(names)):
+            raise ValueError(
+                f"Duplicate value names in ValueSet {self.name!r}: "
+                f"{sorted({n for n in names if names.count(n) > 1})}"
+            )
 
     def __contains__(self, value: object) -> bool:
         if isinstance(value, Value):
