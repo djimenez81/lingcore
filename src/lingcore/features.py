@@ -10,7 +10,7 @@ of a system to an inventory happens in :mod:`lingcore.matrix`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -33,7 +33,7 @@ class FeatureKind(str, Enum):
     SCALAR = "scalar"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Feature:
     """A named dimension of description.
 
@@ -47,6 +47,14 @@ class Feature:
         Human-readable explanation. Defaults to ``""``.
     aliases : tuple of str, optional
         Alternative names, e.g. ``("voi", "voiced")``.
+
+    Notes
+    -----
+    Instances are immutable. Two ``Feature`` instances are equal iff
+    their ``name`` and ``kind`` are the same; ``description`` and
+    ``aliases`` are annotations and do not participate in identity.
+    A string passed as ``aliases`` is wrapped as a single-element
+    tuple.
     """
 
     name: str
@@ -59,12 +67,24 @@ class Feature:
             self, "aliases", freeze_tuple(self.aliases)
         )
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Feature):
+            return NotImplemented
+        return (self.name, self.kind) == (other.name, other.kind)
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.kind))
+
     def matches(self, candidate: str) -> bool:
         """Return True if ``candidate`` names this feature."""
         return candidate == self.name or candidate in self.aliases
 
+    def all_identifiers(self) -> tuple[str, ...]:
+        """Return the canonical name followed by all aliases."""
+        return (self.name, *self.aliases)
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, eq=False)
 class FeatureSystem:
     """An ordered, versioned collection of features.
 
@@ -81,17 +101,15 @@ class FeatureSystem:
         :class:`~lingcore.matrix.FeatureMatrix`. When ``None``
         (the default), :meth:`ValueEncoder.default` is used.
     metadata : Mapping, optional
-        Free-form metadata. lingcore never interprets it. Use this only
-        for annotations that are specific to your application and not
-        structural to the linguistic model — for example, source
-        citations, external annotation IDs, or free-form notes.
-        Do not use it as a substitute for a typed field: if a property
-        is common enough that a second reader would expect to find it
-        by name, propose adding it as a first-class field instead.
+        Free-form metadata. lingcore never interprets it.
 
     Notes
     -----
-    Instances are immutable and hashable.
+    Instances are immutable. Two systems are equal iff their
+    ``name``, ``version``, and ``features`` are equal; ``encoder``
+    and ``metadata`` are attachments and do not participate in
+    identity. Hashing follows the same rule, so two systems that
+    differ only in encoder or metadata are equal and hash equal.
     """
 
     name: str
@@ -111,24 +129,40 @@ class FeatureSystem:
             object.__setattr__(
                 self, "encoder", ValueEncoder.default()
             )
-        names = [f.name for f in self.features]
-        if len(names) != len(set(names)):
-            raise ValueError(
-                f"Duplicate feature names in system {self.name!r}: "
-                f"{sorted({n for n in names if names.count(n) > 1})}"
-            )
+        self._check_unique_identifiers()
+
+    def _check_unique_identifiers(self) -> None:
+        seen: dict[str, str] = {}
+        for feature in self.features:
+            for identifier in feature.all_identifiers():
+                if identifier in seen:
+                    raise ValueError(
+                        f"Identifier {identifier!r} is used by "
+                        f"both {seen[identifier]!r} and "
+                        f"{feature.name!r} in system {self.name!r}"
+                    )
+                seen[identifier] = feature.name
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, FeatureSystem):
+            return NotImplemented
+        return (
+            self.name,
+            self.version,
+            self.features,
+        ) == (
+            other.name,
+            other.version,
+            other.features,
+        )
 
     def __hash__(self) -> int:
-        # Hash only the identity-relevant fields. ``encoder`` and
-        # ``metadata`` are attachments; two systems that agree on
-        # name, version, and features are considered the same
-        # system for hashing purposes.
         return hash((self.name, self.version, self.features))
 
     def __len__(self) -> int:
         return len(self.features)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Feature]:
         return iter(self.features)
 
     def __contains__(self, name: object) -> bool:
@@ -141,6 +175,10 @@ class FeatureSystem:
 
     def index(self, name: str) -> int:
         """Return the position of the named feature in this system.
+
+        Because :meth:`__post_init__` rejects identifier collisions,
+        at most one feature can match any given string. This method
+        therefore returns a unique index or raises ``KeyError``.
 
         Parameters
         ----------
@@ -155,22 +193,23 @@ class FeatureSystem:
         Raises
         ------
         KeyError
-            If no feature matches, or if more than one matches.
+            If no feature matches.
         """
-        matches = [
-            (i, f)
-            for i, f in enumerate(self.features)
-            if f.matches(name)
-        ]
-        if len(matches) != 1:
-            raise KeyError(
-                f"{name!r} matches {len(matches)} features in "
-                f"system {self.name!r}; expected exactly one"
-            )
-        return matches[0][0]
+        for i, f in enumerate(self.features):
+            if f.matches(name):
+                return i
+        raise KeyError(
+            f"No feature matching {name!r} in system {self.name!r}"
+        )
 
     def resolve(self, name: str) -> Feature:
-        """Return the unique feature matching ``name``."""
+        """Return the unique feature matching ``name``.
+
+        Raises
+        ------
+        KeyError
+            If no feature matches.
+        """
         return self.features[self.index(name)]
 
     def names(self) -> tuple[str, ...]:
