@@ -3,7 +3,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - "v*.*.*"          # publish only when version tags are pushed
+      - "v0.1.0"          # publish only when version tags are pushed
 
 jobs:
   build-and-publish:
@@ -17,7 +17,7 @@ jobs:
 
         - uses: actions/setup-python@v5
           with:
-            python-version: "3.11" # Or whatever the version the package needs
+            python-version: "3.12" # Or whatever the version the package needs
 
         - name: Install build backend
           run: python -m pip install --upgrade pip build
